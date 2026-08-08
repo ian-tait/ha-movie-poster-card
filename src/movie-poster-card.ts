@@ -38,6 +38,10 @@ class MoviePosterCard extends LitElement {
   private tapHandle = 0;
   private paused = false;
 
+  getCardSize() {
+    return 8; // ~400px tall in the editor preview
+  }
+
   static getConfigElement() {
     return document.createElement('movie-poster-card-editor');
   }
@@ -431,6 +435,7 @@ class MoviePosterCard extends LitElement {
       display: block;
       width: 100%;
       height: 100%;
+      aspect-ratio: 16 / 9;
       border-radius: var(--ha-card-border-radius, 12px);
       overflow: hidden;
     }
@@ -439,7 +444,7 @@ class MoviePosterCard extends LitElement {
       position: relative;
       width: 100%;
       height: 100%;
-      min-height: 200px;
+      min-height: 300px;
       background: #111;
       border-radius: inherit;
       overflow: hidden;
