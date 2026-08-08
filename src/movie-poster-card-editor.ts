@@ -104,9 +104,9 @@ const SCHEMA: any[] = [
         name: 'overlay_position',
         selector: { select: { mode: 'dropdown', options: [{ value: 'bottom', label: 'Bottom' }, { value: 'top', label: 'Top' }, { value: 'center', label: 'Centre' }] } },
       },
-      { name: 'overlay_color',   selector: { text: { type: 'color' } } },
+      { name: 'overlay_color',   selector: { color_rgb: {} } },
       { name: 'overlay_opacity', selector: { number: { min: 0, max: 1, step: 0.05, mode: 'slider' } } },
-      { name: 'title_color',     selector: { text: { type: 'color' } } },
+      { name: 'title_color',     selector: { color_rgb: {} } },
       {
         name: 'title_size',
         selector: { select: { mode: 'dropdown', options: [{ value: 'sm', label: 'Small' }, { value: 'md', label: 'Medium' }, { value: 'lg', label: 'Large' }, { value: 'xl', label: 'Extra large' }] } },
@@ -115,8 +115,8 @@ const SCHEMA: any[] = [
         name: 'title_weight',
         selector: { select: { mode: 'dropdown', options: [{ value: 'normal', label: 'Normal' }, { value: 'bold', label: 'Bold' }] } },
       },
-      { name: 'meta_color',     selector: { text: { type: 'color' } } },
-      { name: 'synopsis_color', selector: { text: { type: 'color' } } },
+      { name: 'meta_color',     selector: { color_rgb: {} } },
+      { name: 'synopsis_color', selector: { color_rgb: {} } },
       { name: 'text_shadow',    selector: { boolean: {} } },
     ],
   },
@@ -133,6 +133,18 @@ const SCHEMA: any[] = [
     ],
   },
 ];
+
+// Fields that use color_rgb selector — stored as hex in config, need conversion
+const COLOR_FIELDS = ['overlay_color', 'title_color', 'meta_color', 'synopsis_color'] as const;
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function rgbToHex([r, g, b]: [number, number, number]): string {
+  return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+}
 
 const LABELS: Record<string, string> = {
   tmdb_api_key:            'TMDB API Key',
@@ -178,8 +190,28 @@ class MoviePosterCardEditor extends LitElement {
     this._config = config;
   }
 
+  // Convert hex strings → [r,g,b] arrays before passing to ha-form
+  private get _formData(): Record<string, unknown> {
+    const data: Record<string, unknown> = { ...this._config };
+    for (const field of COLOR_FIELDS) {
+      const val = data[field];
+      if (typeof val === 'string' && val.startsWith('#')) {
+        data[field] = hexToRgb(val);
+      }
+    }
+    return data;
+  }
+
+  // Convert [r,g,b] arrays → hex strings before saving to config
   private _valueChanged(ev: CustomEvent) {
-    const config = ev.detail.value as CardConfig;
+    const raw = ev.detail.value as Record<string, unknown>;
+    const config: Record<string, unknown> = { ...raw };
+    for (const field of COLOR_FIELDS) {
+      const val = config[field];
+      if (Array.isArray(val) && val.length === 3) {
+        config[field] = rgbToHex(val as [number, number, number]);
+      }
+    }
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config } }));
   }
 
@@ -193,7 +225,7 @@ class MoviePosterCardEditor extends LitElement {
     return html`
       <ha-form
         .hass=${this.hass}
-        .data=${this._config}
+        .data=${this._formData}
         .schema=${SCHEMA}
         .computeLabel=${this._computeLabel}
         @value-changed=${this._valueChanged}
