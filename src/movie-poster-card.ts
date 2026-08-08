@@ -36,6 +36,13 @@ class MoviePosterCard extends LitElement {
   private tapHandle = 0;
   private paused = false;
 
+  static getStubConfig() {
+    return {
+      tmdb_api_key: 'your_tmdb_api_key_here',
+      watchlist_entity: 'todo.family_watchlist',
+    };
+  }
+
   setConfig(raw: Partial<CardConfig>) {
     if (!raw.tmdb_api_key) throw new Error('movie-poster-card: tmdb_api_key is required');
     this.cfg = { ...DEFAULT_CONFIG, ...raw } as CardConfig;
