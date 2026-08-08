@@ -29,9 +29,10 @@ class MoviePosterCard extends LitElement {
   private progressEl: HTMLElement | null = null;
   private progressStart = 0;
 
-  private touchStartX = 0;
-  private touchStartY = 0;
-  private touchStartTime = 0;
+  private ptrStartX = 0;
+  private ptrStartY = 0;
+  private ptrStartTime = 0;
+  private ptrType = '';
   private tapPending = false;
   private tapHandle = 0;
   private paused = false;
@@ -128,15 +129,22 @@ class MoviePosterCard extends LitElement {
   }
 
   private animateProgress() {
-    clearInterval(this.progressHandle);
     if (!this.cfg.show_progress_bar) return;
-    // Drive via CSS transition; just capture the element reference after first render
     this.updateComplete.then(() => {
       this.progressEl = this.renderRoot?.querySelector('.progress-fill') as HTMLElement | null;
-      if (this.progressEl) {
-        this.progressEl.style.transition = `width ${this.cfg.display_time}s linear`;
-        this.progressEl.style.width = '100%';
-      }
+      if (!this.progressEl) return;
+      // Reset to 0 first, then double-rAF so the browser commits the 0% layout
+      // before the transition starts — same pattern as resetProgress().
+      this.progressEl.style.transition = 'none';
+      this.progressEl.style.width = '0%';
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (this.progressEl) {
+            this.progressEl.style.transition = `width ${this.cfg.display_time}s linear`;
+            this.progressEl.style.width = '100%';
+          }
+        });
+      });
     });
   }
 
@@ -161,31 +169,33 @@ class MoviePosterCard extends LitElement {
     clearTimeout(this.tapHandle);
   }
 
-  // --- Gesture handling ---
+  // --- Gesture handling (pointer events work for mouse, touch, and stylus) ---
 
-  private onTouchStart(e: TouchEvent) {
-    this.touchStartX = e.touches[0].clientX;
-    this.touchStartY = e.touches[0].clientY;
-    this.touchStartTime = Date.now();
+  private onPointerDown(e: PointerEvent) {
+    this.ptrStartX = e.clientX;
+    this.ptrStartY = e.clientY;
+    this.ptrStartTime = Date.now();
+    this.ptrType = e.pointerType;
+    if (this.cfg.pause_on_hover) this.paused = true;
   }
 
-  private onTouchEnd(e: TouchEvent) {
-    const dx = e.changedTouches[0].clientX - this.touchStartX;
-    const dy = e.changedTouches[0].clientY - this.touchStartY;
-    const dt = Date.now() - this.touchStartTime;
+  private onPointerUp(e: PointerEvent) {
+    this.paused = false;
+    const dx = e.clientX - this.ptrStartX;
+    const dy = e.clientY - this.ptrStartY;
+    const dt = Date.now() - this.ptrStartTime;
     const threshold = this.cfg.swipe_threshold ?? 50;
 
+    // Horizontal swipe — all pointer types
     if (Math.abs(dx) > threshold && Math.abs(dx) > Math.abs(dy)) {
-      // Horizontal swipe
       clearTimeout(this.tapHandle);
       this.tapPending = false;
-      const action = dx < 0 ? this.cfg.swipe_left_action : this.cfg.swipe_right_action;
-      this.execute(action);
+      this.execute(dx < 0 ? this.cfg.swipe_left_action : this.cfg.swipe_right_action);
       return;
     }
 
-    if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && dt < 500) {
-      // Tap — check for double
+    // Tap (finger didn't move much, quick release)
+    if (Math.abs(dx) < 20 && Math.abs(dy) < 20 && dt < 500) {
       if (this.tapPending) {
         clearTimeout(this.tapHandle);
         this.tapPending = false;
@@ -200,11 +210,7 @@ class MoviePosterCard extends LitElement {
     }
   }
 
-  private onMouseEnter() {
-    if (this.cfg.pause_on_hover) this.paused = true;
-  }
-
-  private onMouseLeave() {
+  private onPointerLeave() {
     this.paused = false;
   }
 
@@ -303,10 +309,9 @@ class MoviePosterCard extends LitElement {
 
     return html`
       <div class="root"
-        @touchstart=${this.onTouchStart}
-        @touchend=${this.onTouchEnd}
-        @mouseenter=${this.onMouseEnter}
-        @mouseleave=${this.onMouseLeave}>
+        @pointerdown=${this.onPointerDown}
+        @pointerup=${this.onPointerUp}
+        @pointerleave=${this.onPointerLeave}>
 
         <!-- Background layers: two divs crossfade between them -->
         <div class="layer current"
