@@ -3,6 +3,7 @@ import { property, state } from 'lit/decorators.js';
 import { styleMap } from 'lit/directives/style-map.js';
 import { TmdbClient } from './tmdb-client';
 import { DEFAULT_CONFIG, type Action, type CardConfig, type Movie } from './types';
+import './movie-poster-card-editor';
 
 const DOUBLE_TAP_MS = 300;
 const TITLE_SIZES: Record<string, string> = { sm: '14px', md: '18px', lg: '24px', xl: '32px' };
@@ -36,6 +37,10 @@ class MoviePosterCard extends LitElement {
   private tapPending = false;
   private tapHandle = 0;
   private paused = false;
+
+  static getConfigElement() {
+    return document.createElement('movie-poster-card-editor');
+  }
 
   static getStubConfig() {
     return {
