@@ -2,7 +2,5 @@
   "name": "Movie Poster Card",
   "filename": "movie-poster-card.js",
   "render_readme": true,
-  "homeassistant": "2023.11.0",
-  "country": ["GB"],
-  "iot_class": "cloud_polling"
+  "homeassistant": "2023.11.0"
 }
