@@ -226,6 +226,8 @@ Available action types:
 | `double_tap_action` | action | `add-to-watchlist` | Double tap |
 | `hold_action` | action | `none` | Press and hold (600 ms) |
 
+> **Note:** Swipe gestures are not supported — they conflict with HA's own dashboard navigation. Use tap, double-tap, or hold to trigger `next` / `previous` instead.
+
 ---
 
 ## Full example config
