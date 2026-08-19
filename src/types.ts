@@ -61,6 +61,7 @@ export interface CardConfig {
 
   tap_action: Action;
   double_tap_action: Action;
+  hold_action: Action;
   swipe_left_action: Action;
   swipe_right_action: Action;
   swipe_threshold: number;
@@ -69,6 +70,16 @@ export interface CardConfig {
   watchlist_item_format: string;
   watchlist_confirm: boolean;
   watchlist_no_duplicates: boolean;
+
+  show_marquee: boolean;
+  marquee_custom_html?: string;
+  marquee_custom_css?: string;
+  marquee_custom_js?: string;
+  // Deprecated — kept for YAML backwards-compat only; ignored by card
+  marquee_title?: string;
+  marquee_mode?: 'scroll' | 'quotes';
+  marquee_subtitle?: string;
+  marquee_quotes?: string[];
 }
 
 export const DEFAULT_CONFIG: Omit<CardConfig, 'tmdb_api_key'> = {
@@ -106,6 +117,7 @@ export const DEFAULT_CONFIG: Omit<CardConfig, 'tmdb_api_key'> = {
 
   tap_action: { action: 'none' },
   double_tap_action: { action: 'add-to-watchlist' },
+  hold_action: { action: 'none' },
   swipe_left_action: { action: 'next' },
   swipe_right_action: { action: 'previous' },
   swipe_threshold: 50,
@@ -113,4 +125,7 @@ export const DEFAULT_CONFIG: Omit<CardConfig, 'tmdb_api_key'> = {
   watchlist_item_format: '{title} ({year}) — {rating}/10',
   watchlist_confirm: true,
   watchlist_no_duplicates: true,
+
+  show_marquee: false,
+  // marquee_custom_* defaults are applied at runtime from signage-defaults.ts
 };

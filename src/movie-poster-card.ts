@@ -1,8 +1,10 @@
 import { LitElement, html, css, nothing, type PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { styleMap } from 'lit/directives/style-map.js';
+import { unsafeHTML } from 'lit/directives/unsafe-html.js';
 import { TmdbClient } from './tmdb-client';
 import { DEFAULT_CONFIG, type Action, type CardConfig, type Movie } from './types';
+import { DEFAULT_SIGNAGE_HTML, DEFAULT_SIGNAGE_CSS, DEFAULT_SIGNAGE_JS } from './signage-defaults';
 import './movie-poster-card-editor';
 
 const DOUBLE_TAP_MS = 300;
@@ -29,6 +31,7 @@ class MoviePosterCard extends LitElement {
   private clockHandle = 0;
   private progressEl: HTMLElement | null = null;
   private progressStart = 0;
+  private _signageJsRan = false;
 
   private ptrStartX = 0;
   private ptrStartY = 0;
@@ -36,6 +39,8 @@ class MoviePosterCard extends LitElement {
   private ptrType = '';
   private tapPending = false;
   private tapHandle = 0;
+  private holdHandle = 0;
+  private holdFired = false;
   private paused = false;
 
   getCardSize() {
@@ -55,16 +60,35 @@ class MoviePosterCard extends LitElement {
 
   setConfig(raw: Partial<CardConfig>) {
     if (!raw.tmdb_api_key) throw new Error('movie-poster-card: tmdb_api_key is required');
-    this.cfg = { ...DEFAULT_CONFIG, ...raw } as CardConfig;
+    this.cfg = {
+      ...DEFAULT_CONFIG,
+      marquee_custom_html: DEFAULT_SIGNAGE_HTML,
+      marquee_custom_css: DEFAULT_SIGNAGE_CSS,
+      marquee_custom_js:  DEFAULT_SIGNAGE_JS,
+      ...raw,
+    } as CardConfig;
     if (raw.watchlist_entity && !raw.double_tap_action) {
       this.cfg.double_tap_action = { action: 'add-to-watchlist' };
     }
+    this._signageJsRan = false;
     this.client = new TmdbClient(this.cfg.tmdb_api_key, this.cfg.cache_hours);
   }
 
   connectedCallback() {
     super.connectedCallback();
+    if (this.cfg?.show_marquee) this._loadMarqueeFont();
     this.load();
+  }
+
+  private _loadMarqueeFont() {
+    const ID = 'mpc-cinzel-font';
+    if (!document.getElementById(ID)) {
+      const link = document.createElement('link');
+      link.id = ID;
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&display=swap';
+      document.head.appendChild(link);
+    }
   }
 
   disconnectedCallback() {
@@ -170,12 +194,29 @@ class MoviePosterCard extends LitElement {
     this.clockHandle = window.setInterval(tick, 10_000);
   }
 
+  updated(changed: PropertyValues) {
+    super.updated(changed);
+    if (!this._signageJsRan && this.cfg?.show_marquee && this.cfg?.marquee_custom_js) {
+      const host = this.renderRoot?.querySelector('.marquee') as HTMLElement | null;
+      if (host && host.querySelector('[class]')) {
+        this._signageJsRan = true;
+        try {
+          // eslint-disable-next-line no-new-func
+          new Function('host', this.cfg.marquee_custom_js)(host);
+        } catch (e) {
+          console.warn('[movie-poster-card] Custom signage JS error:', e);
+        }
+      }
+    }
+  }
+
   private teardown() {
     clearInterval(this.cycleHandle);
     clearInterval(this.progressHandle);
     clearInterval(this.clockHandle);
     clearTimeout(this.toastHandle);
     clearTimeout(this.tapHandle);
+    clearTimeout(this.holdHandle);
   }
 
   // --- Gesture handling (pointer events work for mouse, touch, and stylus) ---
@@ -185,25 +226,28 @@ class MoviePosterCard extends LitElement {
     this.ptrStartY = e.clientY;
     this.ptrStartTime = Date.now();
     this.ptrType = e.pointerType;
+    this.holdFired = false;
     if (this.cfg.pause_on_hover) this.paused = true;
+
+    // Start hold timer — fires if finger stays still for 600ms
+    clearTimeout(this.holdHandle);
+    this.holdHandle = window.setTimeout(() => {
+      this.holdFired = true;
+      this.execute(this.cfg.hold_action);
+    }, 600);
   }
 
   private onPointerUp(e: PointerEvent) {
+    clearTimeout(this.holdHandle);
     this.paused = false;
+
+    if (this.holdFired) return; // hold already consumed this gesture
+
     const dx = e.clientX - this.ptrStartX;
     const dy = e.clientY - this.ptrStartY;
     const dt = Date.now() - this.ptrStartTime;
-    const threshold = this.cfg.swipe_threshold ?? 50;
 
-    // Horizontal swipe — all pointer types
-    if (Math.abs(dx) > threshold && Math.abs(dx) > Math.abs(dy)) {
-      clearTimeout(this.tapHandle);
-      this.tapPending = false;
-      this.execute(dx < 0 ? this.cfg.swipe_left_action : this.cfg.swipe_right_action);
-      return;
-    }
-
-    // Tap (finger didn't move much, quick release)
+    // Tap — small movement, quick release
     if (Math.abs(dx) < 20 && Math.abs(dy) < 20 && dt < 500) {
       if (this.tapPending) {
         clearTimeout(this.tapHandle);
@@ -280,20 +324,27 @@ class MoviePosterCard extends LitElement {
       .replace('{overview}', movie.overview ?? '');
 
     if (this.cfg.watchlist_no_duplicates) {
-      const entityState = this.hass.states[entity];
-      const existing: any[] = entityState?.attributes?.items ?? [];
-      const alreadyAdded = existing.some(i =>
-        (i.summary ?? i.name ?? '').toLowerCase().includes(movie.title.toLowerCase())
-      );
-      if (alreadyAdded) {
-        this.showToast(`Already on your list`);
+      // Fetch live items via service response (HA 2024.4+); fall back to entity state
+      let existing: any[] = [];
+      try {
+        const resp: any = await this.hass.callService(
+          'todo', 'get_items', {}, { entity_id: entity }, true
+        );
+        existing = resp?.response?.[entity]?.items ?? [];
+      } catch {
+        existing = this.hass.states[entity]?.attributes?.items ?? [];
+      }
+      const title = movie.title.toLowerCase();
+      if (existing.some((i: any) => (i.summary ?? i.name ?? '').toLowerCase().includes(title))) {
+        this.showToast('Already on your list');
         return;
       }
     }
 
     try {
       await this.hass.callService('todo', 'add_item', { item }, { entity_id: entity });
-      if (this.cfg.watchlist_confirm) this.showToast(`Added: ${movie.title}`);
+      // watchlist_confirm gates the "Added" notification only
+      if (this.cfg.watchlist_confirm !== false) this.showToast(`Added: ${movie.title}`);
     } catch {
       this.showToast('Could not add to watchlist');
     }
@@ -336,6 +387,8 @@ class MoviePosterCard extends LitElement {
             opacity: transitioning ? '1' : '0',
             transition: `opacity ${dur} ease`,
           })}></div>
+
+        ${this.cfg.show_marquee ? this.renderMarquee() : nothing}
 
         ${this.cfg.show_overlay && this.overlayVisible ? this.renderOverlay(current) : nothing}
 
@@ -413,6 +466,16 @@ class MoviePosterCard extends LitElement {
     return html`
       <div class="progress-track ${atTop ? 'progress-top' : 'progress-bottom'}">
         <div class="progress-fill"></div>
+      </div>
+    `;
+  }
+
+  private renderMarquee() {
+    const { marquee_custom_css, marquee_custom_html } = this.cfg;
+    return html`
+      <div class="marquee">
+        ${marquee_custom_css ? unsafeHTML(`<style>${marquee_custom_css}</style>`) : nothing}
+        ${marquee_custom_html ? unsafeHTML(marquee_custom_html) : nothing}
       </div>
     `;
   }
@@ -525,6 +588,16 @@ class MoviePosterCard extends LitElement {
       height: 100%;
       width: 0%;
       background: rgba(255,255,255,0.7);
+    }
+
+    /* Cinema signage — positioned container; all visual styling comes from marquee_custom_css */
+    .marquee {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      right: 14px;
+      z-index: 10;
+      pointer-events: none;
     }
 
     /* Toast */
