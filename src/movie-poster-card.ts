@@ -328,7 +328,7 @@ class MoviePosterCard extends LitElement {
       let existing: any[] = [];
       try {
         const resp: any = await this.hass.callService(
-          'todo', 'get_items', {}, { entity_id: entity }, true
+          'todo', 'get_items', {}, { entity_id: entity }, true, true
         );
         existing = resp?.response?.[entity]?.items ?? [];
       } catch {

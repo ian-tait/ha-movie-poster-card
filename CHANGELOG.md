@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 
 ---
 
+## [1.1.1] — 2026-09-08
+
+### Fixed
+- Watchlist duplicate detection: the `todo.get_items` call was still missing the `return_response` flag despite the 1.1.0 entry below claiming it was fixed — `hass.callService`'s 5th parameter is `notifyOnError`, not `returnResponse` (the 6th). Double-tapping to add a movie with `watchlist_no_duplicates: true` set would throw *"The action requires responses and must be called with return_response=True"* instead of adding the item. The call now passes both arguments correctly.
+
+---
+
 ## [1.1.0] — 2026-08-19
 
 ### Added
